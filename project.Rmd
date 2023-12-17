@@ -41,8 +41,8 @@ library(caTools)
 
 ```{r, echo = FALSE, message = FALSE}
 #reading in data and dictionary
-reddit <- read_csv("/Users/rachaeladams/Desktop/R/project/lib con reddit.csv")
-emfd <- read_csv("/Users/rachaeladams/Desktop/R/project/emfd_amp.csv")
+reddit <- read_csv("/Users/username/Desktop/R/project/lib con reddit.csv")
+emfd <- read_csv("/Users/username/Desktop/R/project/emfd_amp.csv")
 ```
 
 ```{r, echo = FALSE}
@@ -279,7 +279,7 @@ A Naïve Bayes Classifier was used. The same dataset was read in and underwent t
 #### Results
 ```{r, echo = FALSE, message = FALSE}
 #dataset
-reddit_test <- read_csv("/Users/rachaeladams/Desktop/R/project/lib con reddit.csv")
+reddit_test <- read_csv("/Users/username/Desktop/R/project/lib con reddit.csv")
 ```
 
 ```{r, echo = FALSE}
