@@ -1,0 +1,392 @@
+---
+title: "Differences in political groups on Reddit in terms of Moral Foundations Theory"
+subtitle: "Big Data and Psychological Science Project"
+author: "B200722"
+output: html_document
+---
+
+### Introduction
+One of the greatest dividing factors among people is the political groups we belong to. Conservative ideology is characterised by "support for preservation of, or advocacy of caution in dismantling long-standing monarchical, religious, and aristocratic institutions", while liberal ideology "support[s] freedom from state intervention in social and economic life, and opposition to the inbuilt prerogatives" (Malka & Lelkes, 2010, p.158). This group membership is informed by deeply personal views of ethics, religion and morality (Spike, 2020).
+
+Given the significance of morality in informing what is 'right' and 'wrong', it follows that political groups may differ in what moral values they may hold. Moral foundations theory attempts to quantify aspects of morality by proposing five key dimensions: authority, care, fairness, loyalty, and sanctity. The theory asserts that moral foundations are shaped by cultural learning and intuitions. Care stems from attachment and empathy. Fairness relates to research into reciprocal altruism. Loyalty stems from the importance of tribal interaction. Authority relates to hierarchical social interaction. Purity relates to the universal feeling of disgust. All five of these take from literature on evolutionary psychology (Graham et al., 2013). This theory was used to create a Moral Foundations Dictionary (MFD), which was first used to assess the differences between political groups through speeches delivered in liberal versus conservative churches.
+
+The original MFD raises issues, however. Firstly, as morality is based around cultural learning, it is ever-changing. As such, a dictionary from 15 years ago may not be applicable to current political beliefs -- for example, purity culture has shifted dramatically in popular culture (Bhatt, 2023). Secondly, it was created with references to religious speeches. Religion is more associated with conservative ideology, meaning the sample may not be as representative of liberal ideology (Ecklund et al., 2016). The extended Moral Foundations Dictionary was created to address these issues. It was developed by having 500 raters highlight if a word was related to a specific moral foundation in newspapers. For each word, a composite-valence score was then computed, representing the overall sentiment expressed in the annotation per moral foundation (Hopp et al., 2020). The EMFD provides a more generalisable view of moral foundations. 
+
+The literature demonstrates a range of success of natural language processing in accurately assessing the differences between political groups, which raises the question of how different they truly are (Malouf & Mullen, 2008; Schein & Gray, 2015). This project attempts to assess whether Liberals and Conservatives differ in their moral foundations, by first assessing their sentiments on the extended Moral Foundations Dictionary, before using topic models and machine learning methods to establish if they are different in nature. 
+
+### 1. Sentiment Analysis
+#### Method
+
+Sentiment analysis will be used to determine if there are any differences between political groups based on their values according to the extended Moral Foundations Dictionary (EMFD; Hopp et al., 2020). It is a natural language processing technique used to obtain sentiments expressed in a piece of text. 
+
+The EMFD has pre-assigned values for 689 words loading on the five key moral foundations. These values indicate the strength of a word relating to each of these key traits, from -1 to 1 (ibid). 
+
+Reddit datasets were obtained using Kaggle (Gajare, 2021). This dataset comprises of 13000 posts across several left and right-leaning subreddits, tagged by the creator as Liberal and Conservative respectively based on what subreddit they were obtained from. It does not include replies to posts.  
+
+The original dataset consists of many columns of information, this was filtered into just the Title, Text, and Political Lean. Many users tend to write their thoughts solely in the title, however some add onto this in the following text. As this text was also valuable to the analysis, the text was combined with the title to produce the corpus. The text was then cleaned of punctuation, numbers, stop words, and NAs from joining the text. Then the text was tokenised into individual words for analysis. The dictionary was joined to the data and the average score for each moral foundation, grouped by political lean, was computed. A independent samples t-test was finally computed to determine if the differences between the political groups' loadings on each moral foundation were statistically significant. 
+
+#### Results 
+
+```{r, echo = FALSE, message = FALSE}
+library(tidyverse)
+library(tidytext)
+library(dplyr)
+library(tm)
+library(patchwork)
+library(kableExtra)
+library(caret)
+library(e1071)
+library(caTools)
+```
+
+```{r, echo = FALSE, message = FALSE}
+#reading in data and dictionary
+reddit <- read_csv("/Users/rachaeladams/Desktop/R/project/lib con reddit.csv")
+emfd <- read_csv("/Users/rachaeladams/Desktop/R/project/emfd_amp.csv")
+```
+
+```{r, echo = FALSE}
+#formatting dataframe
+reddit <- reddit %>% 
+  dplyr::select(c("Title", "Political Lean", "Text"))
+reddit$Text <- paste(reddit$Title, reddit$Text)
+colnames(reddit)[2] ="PoliticalLean"
+colnames(emfd)[1] = "words"
+filter_rdf <- reddit
+```
+
+```{r, echo = FALSE}
+#data cleaning, removing symbols
+na_pattern <- " NA"
+filter_rdf$Text <- gsub(na_pattern,"", filter_rdf$Text)
+filter_rdf$Text <- removeWords(filter_rdf$Text, stopwords("english"))
+filter_rdf$Text <- removeNumbers(filter_rdf$Text)
+filter_rdf$Text <- gsub("http.*","", filter_rdf$Text)
+filter_rdf$Text <- gsub("https.*","", filter_rdf$Text)
+filter_rdf$Text <- gsub("&", "&", filter_rdf$Text)
+filter_rdf$Text <- filter_rdf$Text %>%
+  as.character() %>%
+  str_replace_all("[[:punct:]]", " ") %>%
+  gsub("[^\x01-\x7F]", "", .)
+```
+
+```{r, echo = FALSE, message = FALSE}
+#removing stop words and joining to dataframe
+filter_rdf <- filter_rdf %>% 
+  unnest_tokens(words,"Text", drop = F) %>% 
+  ungroup()
+
+data(stop_words)
+stop_words <- stop_words %>% 
+  rename("words" = "word")
+
+filter_rdf <- filter_rdf %>% 
+  anti_join(stop_words)
+
+filter_rdf <- inner_join(filter_rdf, emfd, by = c("words" = "words"))
+```
+
+```{r, echo = FALSE}
+#creating word count
+rdf <- filter_rdf %>%
+  group_by(PoliticalLean) %>%
+  count(words, sort=T)
+```
+
+```{r, echo = FALSE}
+#mean sentiments
+sentiments <- filter_rdf %>%
+  group_by(PoliticalLean, words) %>%
+  mutate(n = n()) %>%
+  ungroup()
+
+sentiments2 <- sentiments %>% 
+  group_by(PoliticalLean) %>% 
+  summarise(
+  Authority = mean(authority_sent),
+  Care = mean(care_sent),
+  Fairness = mean(fairness_sent),
+  Loyalty = mean(loyalty_sent),
+  Sanctity = mean(sanctity_sent)
+  )
+
+sentiments_long <- sentiments2 %>%
+  gather(key = "Sentiment", value = "Mean Score", -PoliticalLean)
+```
+
+Figure 1 presents the average sentiment of each political group on the five moral foundations using the EMFD. 
+
+```{r, echo = FALSE}
+#creating graph for mean sentiment scores
+ggplot(sentiments_long, aes(x = Sentiment, y = `Mean Score`, fill = PoliticalLean)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Figure 1: Sentiment Analysis by Political Lean",
+       x = "Sentiment",
+       y = "Mean Score") +
+  theme_minimal()
+```
+
+It is immediately striking that all of the values are negative, indicating that the average discussion is about items negatively related to the five moral foundations e.g. 'killing', which has a strong negative value on 'care'. This could be reflective of research showing that political discourse often tends to be framed around negativity (Lengauer et al., 2011).  
+
+Liberals appear to discuss items relating to 'care' and 'sanctity' more frequently, while conservatives appear to discuss items relating to 'authority', 'fairness', and 'loyalty' more. 
+
+Table 1 shows the significance of the difference between political groups in these sentiments. 
+
+```{r, echo = FALSE}
+# conducting t tests
+a_con <- filter(sentiments, PoliticalLean == "Conservative")$authority_sent
+a_lib <- filter(sentiments, PoliticalLean == "Liberal")$authority_sent
+t_test_a <- t.test(a_con, a_lib)
+
+c_con <- filter(sentiments, PoliticalLean == "Conservative")$care_sent
+c_lib <- filter(sentiments, PoliticalLean == "Liberal")$care_sent
+t_test_c <- t.test(c_con, c_lib)
+
+f_con <- filter(sentiments, PoliticalLean == "Conservative")$fairness_sent
+f_lib <- filter(sentiments, PoliticalLean == "Liberal")$fairness_sent
+t_test_f <- t.test(f_con, f_lib)
+
+l_con <- filter(sentiments, PoliticalLean == "Conservative")$loyalty_sent
+l_lib <- filter(sentiments, PoliticalLean == "Liberal")$loyalty_sent
+t_test_l <- t.test(l_con, l_lib)
+
+s_con <- filter(sentiments, PoliticalLean == "Conservative")$sanctity_sent
+s_lib <- filter(sentiments, PoliticalLean == "Liberal")$sanctity_sent
+t_test_s <- t.test(s_con, s_lib)
+
+t_test_results <- data.frame(
+  Sentiment = c("Authority", "Care", "Fairness", "Loyalty", "Sanctity"),
+  P_Value = round(c(t_test_a$p.value, t_test_c$p.value, t_test_f$p.value, t_test_l$p.value, t_test_s$p.value), 3),
+  Conf_int_Lower = round(c(t_test_a$conf.int[1], t_test_c$conf.int[1], t_test_f$conf.int[1], t_test_l$conf.int[1], t_test_s$conf.int[1]), 3),
+  Conf_int_Upper = round(c(t_test_a$conf.int[2], t_test_c$conf.int[2], t_test_f$conf.int[2], t_test_l$conf.int[2], t_test_s$conf.int[2]), 3)) %>%
+  kable(caption = "Table 1: T-tests for sentiment analysis") %>%
+  kable_styling()
+
+t_test_results
+```
+
+As the independent samples t-tests evidence, there is not a statistically significant difference between the two groups in terms of moral sentiments -- the p value is greater than 0.05 for all foundations, and the 95% CIs contain 0. This means the two groups do not differ in their sentiments based on Moral Foundations Theory. 
+
+### 2. Topic modelling: Latent dirichlet allocation
+#### Method
+
+As the independent samples t-tests do not show a statistically significant difference between groups on three moral foundations, it follows that the two groups would not differ from each other in the words that they use. If this hypothesis is true, a topic model would not evidence differing discussion by political group.
+
+Latent dirichlet allocation (LDA) is a topic modelling technique that extracts a given number of topics from a corpus. The corpus is, as above, the series of Reddit posts. The same dataset was used. The two topics are Liberal and Conservative posts. 
+
+The dataset was split by political group, then the word counts were calculated and sorted from most to least common. These were then converted into a Document Term Matrix using the 'tm' package (Feinerer, 2023). The LDA function in package topicmodels (Grün & Hornik, 2011) was then used to create an LDA topic model with k=2 topics; one for each political group. The topic model was used to generate beta values to show the top words in each topic.
+
+#### Results
+
+```{r, echo = FALSE}
+#processing for graph
+top15con <- rdf %>% 
+  filter(PoliticalLean == "Conservative") %>% 
+  group_by(PoliticalLean) %>% 
+  top_n(15, n) %>% 
+  arrange(desc(n))
+
+top15lib <- rdf %>% 
+  filter(PoliticalLean == "Liberal") %>% 
+  group_by(PoliticalLean) %>% 
+  top_n(15, n) %>% 
+  arrange(desc(n))
+```
+
+Figure 2 shows the top 15 words by political group, and Figure 3 shows the top 15 words by topic as measured by their beta value. 
+
+```{r, echo = FALSE}
+#graph to show top 15 words 
+graphs1 <- top15con %>%
+  mutate(words = reorder(words, n)) %>%
+  ggplot(aes(x = n, y = words)) + 
+  geom_col(fill = "#F8766D") + 
+  labs(x = NULL, y = "words", title = "Conservative")
+
+graphs2 <- top15lib %>%
+  mutate(words = reorder(words, n)) %>%
+  ggplot(aes(x = n, y = words)) + 
+  geom_col(fill = "#00BFC4") + 
+  labs(x = NULL, y = "words", title = "Liberal")
+
+graphs1 + graphs2 + plot_annotation("Figure 2: Top 15 words by political group")
+```
+
+
+```{r, echo = FALSE}
+#modifying for word count
+wordcount <- rdf %>% 
+  count(PoliticalLean, words, sort=TRUE)
+```
+
+```{r, echo = FALSE}
+#creating matrix
+rdf_matrix <- wordcount %>% 
+  cast_dtm(PoliticalLean, words, n)
+```
+
+```{r, echo = FALSE, message = FALSE}
+#creating lda model
+rdf_lda <- topicmodels::LDA(rdf_matrix, k=2, control=list(seed=123))
+```
+
+```{r, echo = FALSE}
+#creating beta matrix
+rdf_topics <- tidy(rdf_lda, matrix="beta")
+```
+
+```{r, echo = FALSE}
+#arranging by beta
+rdf_topics <- rdf_topics %>% 
+  dplyr::arrange(beta)
+```
+
+```{r, echo = FALSE}
+#top 15 words for graph
+rdf_t15 <- rdf_topics %>% 
+  group_by(topic) %>%
+  top_n(15, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+```
+
+```{r, echo = FALSE}
+#graph for betas in topic model
+graphs4 <- rdf_t15 %>% 
+  mutate(term = reorder(term, beta)) %>%
+  ggplot(aes(beta, term, fill = topic)) + 
+  geom_col(show.legend = FALSE) + 
+  labs(x = NULL, y = "beta", title = "Figure 3: Top 15 words by beta for a two-topic LDA topic model") + 
+  facet_wrap(~topic, scales = "free")
+
+graphs4
+```
+
+In figure 2, the two groups appear to have quite similar discussions. Both groups have the words "party", "war", "free", "wealth", "pay" and "care" in the top 15 words. These are all terms commonly discussed in politics -- they don't provide much insight into the specific priorities of either group. When examining their differences, the conservative group appears to discuss the idea of "truth" and "wrong[ness]", which could be associated with the sentiment of fairness. The liberal group, alternatively, appears to focus on pushing for justice, with words such as "strike", "violence", "crisis" and "fight" appearing in the top 15. 
+
+This information can be used to label the topic model. Topic 1 focuses strongly on ideas of fairness, with words like "distrust", "agreements", and "prejudice" appearing in the top 15. Themes of the prison system also appear, given that this has been an increasing focus of conservative discussions (Dagan & Teles, 2016). This indicates that topic 1 is related to Conservative discussion.
+Topic 2 focuses primarily on ideas of justice, with words like "lobbying", "victim", "protest", and "liberties" appearing in the top 15. This is consistent with earlier examination of the Liberal group's top 15 words. 
+
+Although there is visually no overlap between the topics, fairness and justice are quite synonymous with each other and in a model, may ultimately be difficult to distinguish from each other. This is consistent with the non-significant difference in fairness reported by the independent samples t-test (p = 0.509, 95% CI [-0.016, 0.008]). The sentiment analysis also indicates that both groups frequently discuss these items in a negative manner. Additionally, it is notable that the values are all very similar; just over 0.003. This further suggests that the word distributions across topics are not very distinctive or topic-specific.
+
+### 3. Naïve Bayes Classifier
+#### Method
+
+In order to test the hypothesis that the topics are not characterised by a unique set of words that strongly differentiate it from other topics, a machine learning method will be used to see if a model can successfully classify posts as belonging to either Liberal posters or Conservative posters.
+
+A Naïve Bayes Classifier was used. The same dataset was read in and underwent the same cleaning as the previous dataset. PoliticalLean was classified as a factor. The dataset was split so 80% of the data became training data, and 20% became test data. The Naïve Bayes function from the package e1071 (Meyer et al., 2022) was used as the classifier. A confusion matrix was used to evaluate the performance of the model.
+
+#### Results
+```{r, echo = FALSE, message = FALSE}
+#dataset
+reddit_test <- read_csv("/Users/rachaeladams/Desktop/R/project/lib con reddit.csv")
+```
+
+```{r, echo = FALSE}
+#preprocessing
+colnames(reddit_test)[2] ="PoliticalLean"
+reddit_test <- reddit_test %>% 
+  dplyr::select(c("Title", "PoliticalLean", "Text"))
+reddit_test$Text <- paste(reddit$Title, reddit$Text)
+reddit_test$PoliticalLean <- as.factor(reddit_test$PoliticalLean)
+```
+
+```{r, echo = FALSE}
+#data cleaning
+reddit_test$Text <- gsub(na_pattern,"", reddit_test$Text)
+reddit_test$Text <- removeWords(reddit_test$Text, stopwords("english"))
+reddit_test$Text <- removeNumbers(reddit_test$Text)
+reddit_test$Text <- gsub("http.*","", reddit_test$Text)
+reddit_test$Text <- gsub("https.*","", reddit_test$Text)
+reddit_test$Text <- gsub("&", "&", reddit_test$Text)
+reddit_test$Text <- reddit_test$Text %>%
+  as.character() %>%
+  str_replace_all("[[:punct:]]", " ") %>%
+  gsub("[^\x01-\x7F]", "", .)
+```
+
+```{r, echo = FALSE}
+#creating training and test datasets
+set.seed(123)
+sample <- sample.split(reddit_test$PoliticalLean, SplitRatio=0.8)
+train_data <- subset(reddit_test, sample==TRUE)
+test_data <-subset(reddit_test, sample==FALSE)
+```
+
+```{r, echo = FALSE, message = FALSE}
+# train  classifier
+nb_model <- naiveBayes(PoliticalLean ~ ., data = train_data)
+
+# make predictions on the test set
+predictions <- predict(nb_model, newdata = test_data)
+
+# evaluate the model
+confusion_matrix <- table(predictions, test_data$PoliticalLean) %>% 
+  kable(caption = "Table 2: Confusion matrix for Naïve Bayes Classifier") %>% 
+  kable_styling()
+confusion_matrix
+```
+
+Interestingly, the model is very successful at classifying Liberal posts, and very unsuccessful at classifying Conservative posts. The matrix indicates that there were 2 instances correctly classified as Conservative (True Positives), but 905 instances were classified as Conservative when they are actually Liberal (False Positives), giving a precision of $\frac{2}{907} *100 = 0.22\%$.
+1599 posts were correctly classified as Liberal, and only 65 were incorrectly classified as Conservative, giving a precision of $\frac{1599}{1664} *100 = 96\%$. 
+
+Model accuracy was better than chance at $\frac{1601}{2571} *100 = 62\%$, though this might be attributed to the fact that there are more liberal posts than conservative in the dataset (65% to 35%). Theoretically, this means that the model classified nearly all posts as Liberal, meaning that the model did not successfully distinguish between the two political parties. 
+
+### Discussion
+
+Ultimately, the model was unsuccessful in distinguishing the differences between the two groups. Initially, support vector machines (SVM) were attempted as a classifier instead of Naïve Bayes, but it would not compute, as too many terms included in the dataset were constant and the machine was unable to scale the data. This suggests that the dataset did not provide any variability; an initial insight into the poor performance of the model. 
+
+This may arise from a couple of issues. Firstly, the original MFD is a contentious dictionary. Concerns have been raised about its theoretical validity, practical utility and scope (Weber et al., 2018; Garten et al., 2019; Sagi & Dehghani, 2014). The EMFD attempts to resolve these issues, however the authors do caution its ability to adequately capture moral sentiments in shorter pieces, given that it was designed using newspaper articles (Hopp et al., 2021). As a relatively new dictionary, there is yet to be any research validating its generalisability across other text domains. The EMFD is, however, presently the most successful moral foundations dictionary and does improve on its predecessor. 
+
+Secondly, other datasets may be more appropriate for detecting differences. A potential issue with using such a broad mix of subreddits within the corpus is that there may exist too much variability in the data, therefore generating betas that were too small and constant for valuable analysis. This could be remedied by choosing just one left-leaning and one right-leaning subreddit, or a subreddit that features political discussion on a specific topic. Alternatively, there may not be enough difference between Liberal and Conservative groups to be detected -- politically, Liberals are still relatively right-leaning in comparison to political systems like communism. Future research could consider using more radically left and right-leaning perspectives.
+
+Furthermore, future analyses may consider using the SVM over the Naïve Bayes. Naïve Bayes assumes independence of the two groups, which is not the case for politics -- many of their discussions will overlap. As discussed prior, however, the SVM was unsuccessful due to the constant values in the dataset. 
+
+The results of this analysis conclude that political groups do not differ in their moral foundations.
+
+### Notes
+
+The code for this project can be found at https://github.com/s2145448/bigdataproject/
+
+Word count: 1998
+
+### Bibliography
+Bhatt, C. (2023)  Liberation and Purity: Race, New Religious Movements and the Ethics of Postmodernity. London: Routledge.
+
+Dagan, D., Teles, S. M. (2016). Prison Break: Why Conservatives Turned Against Mass Incarceration. Oxford: Oxford University Press. 
+
+Ecklund, E. H., Khalsa, S., Peifer, J. L. (2016). Political conservatism, religion, and environmental consumption in the United States. *Environmental Politics, 25*(4), 661-689.
+
+Feinerer, I. (2023). *Introduction to the tm Package: Text Mining in R.* https://cran.r-project.org/web/packages/tm/vignettes/tm.pdf
+
+Gajare, N. (2021). *Liberals vs Conservatives on Reddit [13000 posts].* https://www.kaggle.com/datasets/neelgajare/liberals-vs-conservatives-on-reddit-13000-posts/data
+
+Garten, J., Kennedy, B., Hoover, J., Sagae, K., & Dehghani, M. (2019). Incorporating demographic embeddings into language understanding. *Cognitive Science, 43*(1), e12701.
+
+Graham, J., Haidt, J., Nosek, B. A. (2009). Liberals and Conservatives Rely on Different Sets of Moral Foundations. *Personality Processes and Individual Differences, 96*(5), 1029-1046.
+
+Graham, J., Haidt, J., Koleva, S., et al. (2013). Moral Foundations Theory: The Pragmatic Validity of Moral Pluralism. *Advances in Experimental Social Psychology, 47*, 55-130. 
+
+Gray, K., Schein, C. (2015). The Unifying Moral Dyad: Liberals and Conservatives Share the Same Harm-Based Moral Template.  *Personality and Social Psychology Bulletin, 41*(8), 1147-1163
+
+Grün B, Hornik K (2011). “topicmodels: An R Package for Fitting Topic Models". *Journal of Statistical Software, 40*(13), 1–30.
+
+Hopp, F. R., Fisher, J. T., Cornell, D., Huskey, R., Weber, R. (2021). The extended Moral Foundations Dictionary (eMFD): Development and applications of a crowd-sourced approach to extracting moral intuitions from text. *Behaviour Research Methods, 53*, 232-246. 
+
+Lengauer, G., Esser, F., Berganza, R. (2011). Negativity in political news: A review of concepts, operationalizations and key findings. *Journalism, 13*(2), 179-202. 
+
+Malka, A., Lelkes, Y. (2010). More than Ideology: Conservative–Liberal Identity and Receptivity to Political Cues. *Social Justice Research, 23*, 156-188. 
+
+Malouf, R., Mullen, T. (2008). Taking sides: user classification for informal online political discourse. *Internet Research, 18*(2), 177-190.
+
+Sagi, E., Dehghani, M. (2013). Measuring Moral Rhetoric in Text. *Social Science Computer Review, 32*(2), 132-144.
+
+Spike, J. P. (2020). Is there a right and left when the question is about right and wrong? - The irreducible difference between ethics and politics, religion, and morality. *Ethics, Medicine and Public Health, 14*, 100411.
+
+Weber, R., Mangus, J. M., Hopp, F. R., et al. (2018). Extracting latent moral information from text narratives: Relevance, challenges, and solutions. *Communication Methods and Measures, 12*(3), 119–139.
+
+
+
+
+
+
